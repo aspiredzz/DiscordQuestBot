@@ -1,12 +1,12 @@
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
+const { Client, GatewayIntentBits } = require('discord.js');
 
 // ======================
-// RAILWAY TOKEN SETUP
+// RAILWAY TOKEN
 // ======================
 const TOKEN = process.env.DISCORD_TOKEN;
 
 if (!TOKEN) {
-  console.log("❌ Missing DISCORD_TOKEN in environment variables (Railway)");
+  console.log("❌ Missing DISCORD_TOKEN in Railway Variables");
   process.exit(1);
 }
 
@@ -21,46 +21,47 @@ const client = new Client({
   ]
 });
 
-client.commands = new Collection();
+// ======================
+// READY EVENT (FIXED)
+// ======================
+client.once('clientReady', () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+});
 
 // ======================
-// SIMPLE COMMAND SYSTEM
+// COMMAND HANDLER
 // ======================
-client.on('messageCreate', async (msg) => {
+client.on('messageCreate', (msg) => {
   if (msg.author.bot) return;
   if (!msg.content.startsWith('/')) return;
 
   const args = msg.content.slice(1).split(' ');
   const cmd = args.shift().toLowerCase();
 
-  // ===== APPLY =====
+  // ===== APPLICATION SYSTEM =====
   if (cmd === 'apply') {
-    return msg.reply(`Application received: ${args.join(' ')}`);
+    return msg.reply(`Application received: ${args.join(' ') || 'no details'}`);
   }
 
-  // ===== ACCEPT =====
   if (cmd === 'accept') {
-    return msg.reply(`Application accepted for ${args[0]}`);
+    return msg.reply(`Accepted: ${args[0] || 'unknown user'}`);
   }
 
-  // ===== DENY =====
   if (cmd === 'deny') {
-    return msg.reply(`Application denied for ${args[0]}`);
+    return msg.reply(`Denied: ${args[0] || 'unknown user'}`);
   }
 
-  // ===== REVIEW =====
   if (cmd === 'review') {
-    return msg.reply(`Reviewing applications... (placeholder system)`);
+    return msg.reply('Reviewing applications...');
   }
 
-  // ===== STAFF NOTE =====
+  // ===== STAFF SYSTEM =====
   if (cmd === 'staffnote') {
     return msg.reply(`Staff note saved: ${args.join(' ')}`);
   }
 
-  // ===== BLACKLIST =====
   if (cmd === 'blacklist') {
-    return msg.reply(`${args[0]} has been blacklisted`);
+    return msg.reply(`User blacklisted: ${args[0] || 'unknown'}`);
   }
 
   // ===== TEMPLATE =====
@@ -69,7 +70,7 @@ client.on('messageCreate', async (msg) => {
   }
 
   if (cmd === 'template-use') {
-    return msg.reply(`Using template: ${args.join(' ')}`);
+    return msg.reply(`Template used: ${args.join(' ')}`);
   }
 
   // ===== UTILITY =====
@@ -86,25 +87,25 @@ client.on('messageCreate', async (msg) => {
   }
 
   if (cmd === 'serverinfo') {
-    return msg.reply(`Server: ${msg.guild.name}`);
+    return msg.reply(`Server: ${msg.guild?.name || 'DM'}`);
   }
 
   if (cmd === 'uptime') {
-    return msg.reply(`${process.uptime().toFixed(0)} seconds`);
+    return msg.reply(`Uptime: ${Math.floor(process.uptime())}s`);
   }
 
-  // ===== TICKET =====
+  // ===== TICKETS =====
   if (cmd === 'ticket') {
-    return msg.reply(`Ticket created: ${args.join(' ')}`);
+    return msg.reply(`Ticket created: ${args.join(' ') || 'no reason'}`);
   }
 
   if (cmd === 'transcript') {
     return msg.reply('Transcript system placeholder');
   }
 
-  // ===== PROFILE =====
+  // ===== PROFILES =====
   if (cmd === 'profile') {
-    return msg.reply(`Profile for ${msg.author.username}`);
+    return msg.reply(`Profile: ${msg.author.username}`);
   }
 
   if (cmd === 'history') {
@@ -117,13 +118,12 @@ client.on('messageCreate', async (msg) => {
 });
 
 // ======================
-// READY EVENT
+// ERROR HANDLING
 // ======================
-client.once('ready', () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-});
+client.on('error', console.error);
+process.on('unhandledRejection', console.error);
 
 // ======================
-// LOGIN USING RAILWAY TOKEN
+// LOGIN
 // ======================
 client.login(TOKEN);
