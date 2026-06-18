@@ -1,6 +1,0 @@
-# railway.toml
-[build]
-builder = "nixpacks"
-
-[deploy]
-startCommand = "node app/index.js"
