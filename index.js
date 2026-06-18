@@ -1,129 +1,127 @@
-const { Client, GatewayIntentBits } = require('discord.js');
+const {
+  Client,
+  GatewayIntentBits,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  EmbedBuilder
+} = require('discord.js');
 
-// ======================
-// RAILWAY TOKEN
-// ======================
 const TOKEN = process.env.DISCORD_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID; // bot application ID
 
-if (!TOKEN) {
-  console.log("❌ Missing DISCORD_TOKEN in Railway Variables");
+if (!TOKEN || !CLIENT_ID) {
+  console.log("Missing DISCORD_TOKEN or CLIENT_ID");
   process.exit(1);
 }
 
-// ======================
-// CLIENT SETUP
-// ======================
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+  intents: [GatewayIntentBits.Guilds]
 });
 
-// ======================
-// READY EVENT (FIXED)
-// ======================
-client.once('clientReady', () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-});
+/* ---------------- COMMANDS ---------------- */
 
-// ======================
-// COMMAND HANDLER
-// ======================
-client.on('messageCreate', (msg) => {
-  if (msg.author.bot) return;
-  if (!msg.content.startsWith('/')) return;
+const commands = [
+  new SlashCommandBuilder()
+    .setName('ping')
+    .setDescription('Check bot latency'),
 
-  const args = msg.content.slice(1).split(' ');
-  const cmd = args.shift().toLowerCase();
+  new SlashCommandBuilder()
+    .setName('apply')
+    .setDescription('Submit an application')
+    .addStringOption(o =>
+      o.setName('text')
+        .setDescription('Your application')
+        .setRequired(true)
+    ),
 
-  // ===== APPLICATION SYSTEM =====
-  if (cmd === 'apply') {
-    return msg.reply(`Application received: ${args.join(' ') || 'no details'}`);
+  new SlashCommandBuilder()
+    .setName('review')
+    .setDescription('Review applications'),
+
+  new SlashCommandBuilder()
+    .setName('accept')
+    .setDescription('Accept application')
+    .addStringOption(o =>
+      o.setName('user')
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('deny')
+    .setDescription('Deny application')
+    .addStringOption(o =>
+      o.setName('user')
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('ticket')
+    .setDescription('Create ticket')
+    .addStringOption(o =>
+      o.setName('reason')
+        .setRequired(true)
+    )
+].map(c => c.toJSON());
+
+/* ---------------- REGISTER COMMANDS ---------------- */
+
+const rest = new REST({ version: '10' }).setToken(TOKEN);
+
+async function registerCommands() {
+  try {
+    console.log("Registering slash commands...");
+    await rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      { body: commands }
+    );
+    console.log("Slash commands registered.");
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+/* ---------------- INTERACTIONS ---------------- */
+
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === 'ping') {
+    return interaction.reply('pong');
   }
 
-  if (cmd === 'accept') {
-    return msg.reply(`Accepted: ${args[0] || 'unknown user'}`);
+  if (interaction.commandName === 'apply') {
+    const text = interaction.options.getString('text');
+    return interaction.reply(`Application submitted:\n${text}`);
   }
 
-  if (cmd === 'deny') {
-    return msg.reply(`Denied: ${args[0] || 'unknown user'}`);
+  if (interaction.commandName === 'review') {
+    return interaction.reply('No applications stored (add DB later)');
   }
 
-  if (cmd === 'review') {
-    return msg.reply('Reviewing applications...');
+  if (interaction.commandName === 'accept') {
+    const user = interaction.options.getString('user');
+    return interaction.reply(`Accepted: ${user}`);
   }
 
-  // ===== STAFF SYSTEM =====
-  if (cmd === 'staffnote') {
-    return msg.reply(`Staff note saved: ${args.join(' ')}`);
+  if (interaction.commandName === 'deny') {
+    const user = interaction.options.getString('user');
+    return interaction.reply(`Denied: ${user}`);
   }
 
-  if (cmd === 'blacklist') {
-    return msg.reply(`User blacklisted: ${args[0] || 'unknown'}`);
-  }
-
-  // ===== TEMPLATE =====
-  if (cmd === 'template-create') {
-    return msg.reply(`Template created: ${args.join(' ')}`);
-  }
-
-  if (cmd === 'template-use') {
-    return msg.reply(`Template used: ${args.join(' ')}`);
-  }
-
-  // ===== UTILITY =====
-  if (cmd === 'ping') {
-    return msg.reply('pong');
-  }
-
-  if (cmd === 'avatar') {
-    return msg.reply(msg.author.displayAvatarURL());
-  }
-
-  if (cmd === 'userinfo') {
-    return msg.reply(`User: ${msg.author.tag}`);
-  }
-
-  if (cmd === 'serverinfo') {
-    return msg.reply(`Server: ${msg.guild?.name || 'DM'}`);
-  }
-
-  if (cmd === 'uptime') {
-    return msg.reply(`Uptime: ${Math.floor(process.uptime())}s`);
-  }
-
-  // ===== TICKETS =====
-  if (cmd === 'ticket') {
-    return msg.reply(`Ticket created: ${args.join(' ') || 'no reason'}`);
-  }
-
-  if (cmd === 'transcript') {
-    return msg.reply('Transcript system placeholder');
-  }
-
-  // ===== PROFILES =====
-  if (cmd === 'profile') {
-    return msg.reply(`Profile: ${msg.author.username}`);
-  }
-
-  if (cmd === 'history') {
-    return msg.reply('History system placeholder');
-  }
-
-  if (cmd === 'reputation') {
-    return msg.reply('Reputation updated');
+  if (interaction.commandName === 'ticket') {
+    const reason = interaction.options.getString('reason');
+    return interaction.reply(`Ticket created: ${reason}`);
   }
 });
 
-// ======================
-// ERROR HANDLING
-// ======================
-client.on('error', console.error);
-process.on('unhandledRejection', console.error);
+/* ---------------- READY ---------------- */
 
-// ======================
-// LOGIN
-// ======================
+client.once('clientReady', async () => {
+  console.log(`Logged in as ${client.user.tag}`);
+});
+
+/* ---------------- START ---------------- */
+
 client.login(TOKEN);
+registerCommands();
