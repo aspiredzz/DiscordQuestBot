@@ -1,8 +1,17 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, EmbedBuilder, ChannelType } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const express = require('express');
 const axios = require('axios');
-require('dotenv').config(); // Load .env FIRST
 const app = express();
+
+// Read token directly from Railway environment variables
+const TOKEN = process.env.DISCORD_TOKEN;
+const PORT = process.env.PORT || 3000;
+
+if (!TOKEN) {
+  console.error('❌ DISCORD_TOKEN not found in environment variables. Add it to Railway dashboard.');
+  process.exit(1);
+}
+
 const client = new Client({ 
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
   ws: { large_threshold: 250 },
@@ -10,9 +19,8 @@ const client = new Client({
 });
 
 const userSessions = new Map();
-const PORT = process.env.PORT || 3000;
 
-// Enhanced logging for debugging
+// Enhanced logging
 const LOG = {
   info: (msg) => console.log(`[INFO] ${new Date().toISOString()} - ${msg}`),
   error: (msg) => console.error(`[ERROR] ${new Date().toISOString()} - ${msg}`),
@@ -21,9 +29,9 @@ const LOG = {
 };
 
 class QuestFarmer {
-  constructor(userId, token) {
+  constructor(userId, userToken) {
     this.userId = userId;
-    this.token = token;
+    this.userToken = userToken;
     this.running = false;
     this.completedCount = 0;
     this.failedQuests = new Map();
@@ -45,36 +53,33 @@ class QuestFarmer {
           method,
           url: `https://discord.com/api/v10${endpoint}`,
           headers: {
-            'Authorization': `Bot ${this.token}`, // CRITICAL: Bot prefix for bot tokens
+            'Authorization': `Bot ${this.userToken}`,
             'Content-Type': 'application/json',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
             'X-RateLimit-Precision': 'millisecond'
           },
           timeout: 10000,
-          validateStatus: () => true // Don't throw on any status
+          validateStatus: () => true
         };
 
         if (body) config.data = body;
 
         const response = await axios(config);
         
-        // Handle rate limiting explicitly
         if (response.status === 429) {
           const retryAfter = response.headers['retry-after'] || response.data?.retry_after;
           const delay = retryAfter ? parseInt(retryAfter) * 1000 : this.baseDelay * Math.pow(2, retries);
-          LOG.warn(`Rate limited. Waiting ${delay}ms (attempt ${retries + 1}/${this.maxRetries})`);
+          LOG.warn(`Rate limited. Waiting ${delay}ms`);
           await this.sleep(delay);
           retries++;
           continue;
         }
 
-        // Token validation check
         if (response.status === 401) {
           this.running = false;
-          throw new Error(`❌ 401 Unauthorized - Token invalid, expired, or malformed. Check your token format, boss man.`);
+          throw new Error(`❌ 401 Unauthorized - Token invalid or expired.`);
         }
 
-        // Server errors - retry with backoff
         if (response.status >= 500) {
           LOG.warn(`Server error ${response.status}. Retrying...`);
           await this.sleep(this.baseDelay * Math.pow(2, retries));
@@ -82,16 +87,14 @@ class QuestFarmer {
           continue;
         }
 
-        // Success
+        if (response.status >= 400) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
         if (response.status >= 200 && response.status < 300) {
           this.consecutiveErrors = 0;
           this.lastActivityTime = Date.now();
           return response.data;
-        }
-
-        // Client errors (non-401) - don't retry
-        if (response.status >= 400) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText || JSON.stringify(response.data)}`);
         }
 
         return response.data;
@@ -130,7 +133,7 @@ class QuestFarmer {
       }
     }
 
-    throw new Error(`Max retries exceeded on ${endpoint}`);
+    throw new Error(`Max retries exceeded`);
   }
 
   async validateToken() {
@@ -139,10 +142,10 @@ class QuestFarmer {
       const result = await this.makeRequest('/users/@me');
       
       if (!result.id) {
-        throw new Error('Invalid token response - no user ID returned');
+        throw new Error('Invalid token response');
       }
 
-      LOG.info(`Token valid for user: ${result.username}#${result.discriminator || '0'}`);
+      LOG.info(`Token valid for user: ${result.username}`);
       return true;
     } catch (error) {
       LOG.error(`Token validation failed: ${error.message}`);
@@ -155,12 +158,12 @@ class QuestFarmer {
       const quests = await this.makeRequest('/users/@me/quests');
       
       if (!Array.isArray(quests)) {
-        LOG.warn(`Quests endpoint returned non-array: ${typeof quests}`);
+        LOG.warn(`Quests returned non-array`);
         return [];
       }
 
       quests.forEach(quest => {
-        if (quest.id) this.questCache.set(quest.id, quest);
+        if (quest && quest.id) this.questCache.set(quest.id, quest);
       });
 
       return quests.filter(q => q && q.id);
@@ -181,7 +184,7 @@ class QuestFarmer {
       LOG.debug(`Quest ${questId} completed`);
       return true;
     } catch (error) {
-      LOG.warn(`Quest completion failed: ${questId} - ${error.message}`);
+      LOG.warn(`Quest completion failed: ${questId}`);
       
       if (!this.failedQuests.has(questId)) {
         this.failedQuests.set(questId, { retries: 0, nextRetry: Date.now() + 5000 });
@@ -202,7 +205,7 @@ class QuestFarmer {
       LOG.debug(`Reward claimed for quest ${questId}`);
       return true;
     } catch (error) {
-      LOG.warn(`Reward claim failed: ${questId} - ${error.message}`);
+      LOG.warn(`Reward claim failed: ${questId}`);
       return false;
     }
   }
@@ -213,7 +216,7 @@ class QuestFarmer {
 
     for (const [questId, failureData] of quests) {
       if (failureData.retries >= this.maxRetries) {
-        LOG.warn(`Quest ${questId} exceeded max retries. Removing.`);
+        LOG.warn(`Quest ${questId} exceeded max retries`);
         this.failedQuests.delete(questId);
         continue;
       }
@@ -241,7 +244,6 @@ class QuestFarmer {
 
     while (this.running) {
       try {
-        // Kill switch if too many consecutive errors
         if (this.consecutiveErrors > this.maxConsecutiveErrors) {
           this.running = false;
           this.updateStatus(`❌ Too many consecutive errors. Stopping.`);
@@ -291,13 +293,13 @@ class QuestFarmer {
       }
     }
 
-    LOG.info(`Quest farming stopped. Total completed: ${this.completedCount}`);
+    LOG.info(`Quest farming stopped. Total: ${this.completedCount}`);
   }
 
   stop() {
     this.running = false;
-    this.updateStatus(`⏹️ Bot stopped. Total completed: ${this.completedCount}`);
-    LOG.info(`Stopped by user. Completed: ${this.completedCount}`);
+    this.updateStatus(`⏹️ Stopped. Completed: ${this.completedCount}`);
+    LOG.info(`Stopped. Completed: ${this.completedCount}`);
   }
 
   updateStatus(message) {
@@ -320,7 +322,7 @@ class QuestFarmer {
   }
 }
 
-// Discord bot events
+// Discord events
 client.on('ready', () => {
   LOG.info(`✅ Bot logged in as ${client.user.tag}`);
   client.user.setActivity('quest farming', { type: 'WATCHING' });
@@ -340,11 +342,11 @@ client.on('interactionCreate', async interaction => {
   const userId = interaction.user.id;
 
   if (interaction.commandName === 'start') {
-    const token = interaction.options.getString('token');
+    const userToken = interaction.options.getString('token');
 
-    if (!token || token.length < 20) {
+    if (!userToken || userToken.length < 20) {
       return interaction.reply({
-        content: '❌ Invalid token format. Tokens should be 20+ characters.',
+        content: '❌ Invalid token format',
         ephemeral: true
       });
     }
@@ -353,13 +355,13 @@ client.on('interactionCreate', async interaction => {
       const existing = userSessions.get(userId);
       if (existing.running) {
         return interaction.reply({
-          content: '⚠️ Already running for this user. Use /stop first.',
+          content: '⚠️ Already running. Use /stop first.',
           ephemeral: true
         });
       }
     }
 
-    const farmer = new QuestFarmer(userId, token);
+    const farmer = new QuestFarmer(userId, userToken);
 
     try {
       await interaction.deferReply();
@@ -370,12 +372,12 @@ client.on('interactionCreate', async interaction => {
       const embed = new EmbedBuilder()
         .setColor('#43b581')
         .setTitle('✅ Quest Farmer Started')
-        .setDescription('Your token is valid, bot is now farming quests...')
+        .setDescription('Token valid. Farming quests...')
         .addFields(
           { name: 'Status', value: 'Running ▶️', inline: true },
           { name: 'Completed', value: '0', inline: true }
         )
-        .setFooter({ text: 'Use /stop to halt the bot' })
+        .setFooter({ text: 'Use /stop to halt' })
         .setTimestamp();
 
       farmer.statusCallback = async (message) => {
@@ -411,7 +413,7 @@ client.on('interactionCreate', async interaction => {
 
     if (!farmer || !farmer.running) {
       return interaction.reply({
-        content: '❌ No active bot session',
+        content: '❌ No active session',
         ephemeral: true
       });
     }
@@ -423,7 +425,7 @@ client.on('interactionCreate', async interaction => {
       .setTitle('⏹️ Quest Farmer Stopped')
       .addFields(
         { name: 'Total Completed', value: farmer.completedCount.toString() },
-        { name: 'Failed Quests', value: farmer.failedQuests.size.toString() },
+        { name: 'Failed', value: farmer.failedQuests.size.toString() },
         { name: 'Stopped At', value: new Date().toLocaleTimeString() }
       )
       .setTimestamp();
@@ -451,7 +453,7 @@ client.on('interactionCreate', async interaction => {
         { name: 'Completed', value: status.completed.toString(), inline: true },
         { name: 'Failed', value: status.failed.toString(), inline: true },
         { name: 'Cached', value: status.cached.toString(), inline: true },
-        { name: 'Consecutive Errors', value: status.errors.toString(), inline: true }
+        { name: 'Errors', value: status.errors.toString(), inline: true }
       )
       .setTimestamp();
 
@@ -476,7 +478,7 @@ client.on('ready', async () => {
         .setDescription('Stop the quest farmer'),
       new SlashCommandBuilder()
         .setName('status')
-        .setDescription('Check current farmer status')
+        .setDescription('Check farmer status')
     ];
 
     await client.application.commands.set(commands);
@@ -510,19 +512,12 @@ app.listen(PORT, () => {
 
 process.on('unhandledRejection', error => {
   LOG.error(`Unhandled rejection: ${error.message}`);
-  console.error(error);
 });
 
 process.on('uncaughtException', error => {
   LOG.error(`Uncaught exception: ${error.message}`);
-  console.error(error);
   process.exit(1);
 });
 
-const TOKEN = process.env.DISCORD_TOKEN;
-if (!TOKEN) {
-  LOG.error('❌ DISCORD_TOKEN not found in environment variables');
-  process.exit(1);
-}
-
+// Login with bot token from Railway
 client.login(TOKEN);
