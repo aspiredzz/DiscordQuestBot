@@ -1,18 +1,15 @@
 {
-  "name": "discord-quest-farmer-bot",
+  "name": "discord-quest-bot",
   "version": "1.0.0",
-  "description": "Discord bot for automatic quest completion",
-  "main": "quest_bot_server.js",
+  "description": "Quest farming bot",
+  "main": "index.js",
   "scripts": {
-    "start": "node quest_bot_server.js",
-    "dev": "node quest_bot_server.js"
+    "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.14.0",
-    "express": "^4.18.2",
-    "axios": "^1.6.2"
-  },
-  "engines": {
-    "node": "18.x"
+    "discord.js": "^14.0.0",
+    "express": "^4.18.0",
+    "axios": "^1.4.0",
+    "dotenv": "^16.0.0"
   }
 }
