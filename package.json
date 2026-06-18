@@ -1,15 +1,18 @@
 {
   "name": "discord-quest-bot",
   "version": "1.0.0",
-  "description": "Quest farming bot",
-  "main": "index.js",
+  "description": "Quest farming bot for Discord",
+  "main": "app/index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node app/index.js",
+    "dev": "node app/index.js"
   },
   "dependencies": {
     "discord.js": "^14.0.0",
     "express": "^4.18.0",
-    "axios": "^1.4.0",
-    "dotenv": "^16.0.0"
+    "axios": "^1.4.0"
+  },
+  "engines": {
+    "node": "18.x"
   }
 }
